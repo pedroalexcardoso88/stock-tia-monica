@@ -77,17 +77,19 @@ const SUPABASE_URL = 'https://pljkjtdfpbivizeldpzf.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_cEKpj86rrUvscsUhtgs-qA_VhyxaSsL';
 // ============================================================
 
+
 const ESTADOS = {
   stock:     {label:'Em stock',   cor:'#2ec4b6'},
   publicado: {label:'Na Vinted',  cor:'#7b5cff'},
   vendido:   {label:'Por enviar', cor:'#ff8a3d'},
   enviado:   {label:'Enviado',    cor:'#e0a100'},
-  concluido: {label:'Concluído',  cor:'#3bb54a'},
+  concluido: {label:'Vendido',    cor:'#3bb54a'},
 };
-const FILTROS = [['ativos','Por vender / enviar'],['stock','Em stock'],['publicado','Na Vinted'],['vendido','Por enviar'],['enviado','Enviados'],['concluido','Concluídos'],['todos','Todos']];
+const VEST = {vendido:{label:'Por enviar',cor:'#ff8a3d'}, enviado:{label:'Enviado',cor:'#e0a100'}, concluido:{label:'Concluído',cor:'#3bb54a'}};
+const FILTROS = [['ativos','Por vender / enviar'],['stock','Em stock'],['publicado','Na Vinted'],['vendido','Por enviar'],['enviado','Enviados'],['concluido','Vendidos'],['todos','Todos']];
 const CATEGORIAS = ['Roupa','Brinquedos','Acessórios','Casa','Outro'];
 
-const S = {user:null, acesso:null, artigos:[], compras:[], tab:'stock', filtro:'ativos', pesquisa:'', nc:null, mes:null, ocupado:false};
+const S = {user:null, acesso:null, artigos:[], compras:[], vendas:[], tab:'stock', filtro:'ativos', pesquisa:'', nc:null, mes:null, ocupado:false};
 let sb = null;
 
 // ---------- utilitários ----------
@@ -97,14 +99,38 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const eur = n => (Number(n)||0).toLocaleString('pt-PT',{style:'currency',currency:'EUR'});
 const cod = id => '#' + String(id).padStart(4,'0');
 const num = s => { const n = parseFloat(String(s ?? '').replace(/\s/g,'').replace(',','.')); return isNaN(n) ? NaN : n; };
+const int = s => { const n = parseInt(String(s ?? '').trim(), 10); return isNaN(n) ? NaN : n; };
 const r2 = n => Math.round(n*100)/100;
 const numInp = n => n == null ? '' : String(n).replace('.',',');
 const dt = d => d ? d.split('-').reverse().join('/') : '';
 const hoje = () => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 const mesNome = m => { const s = new Date(m+'-15T12:00:00').toLocaleDateString('pt-PT',{month:'long',year:'numeric'}); return s[0].toUpperCase()+s.slice(1); };
-const norm = a => ({...a, custo:Number(a.custo)||0, preco_venda: a.preco_venda==null ? null : Number(a.preco_venda)});
+const norm = a => ({...a, custo:Number(a.custo)||0, quantidade:Number(a.quantidade)||1});
 const normC = c => ({...c, custo_total:Number(c.custo_total)||0});
+const normV = v => ({...v, preco:Number(v.preco)||0, quantidade:Number(v.quantidade)||1});
 const ordCompras = () => S.compras.sort((a,b)=> b.data.localeCompare(a.data) || b.id-a.id);
+const un = n => n + (n===1 ? ' un.' : ' un.');
+
+// stock por artigo
+const vendasDe = id => S.vendas.filter(v => v.artigo_id === id);
+const nVendidas = a => vendasDe(a.id).reduce((s,v) => s + v.quantidade, 0);
+const disp = a => a.quantidade - nVendidas(a);
+const temVenda = (a, est) => vendasDe(a.id).some(v => v.estado === est);
+const FILTRO_OK = {
+  stock:     a => disp(a) > 0 && a.estado !== 'publicado',
+  publicado: a => disp(a) > 0 && a.estado === 'publicado',
+  vendido:   a => temVenda(a,'vendido'),
+  enviado:   a => temVenda(a,'enviado'),
+  concluido: a => disp(a) <= 0 && !temVenda(a,'vendido') && !temVenda(a,'enviado'),
+  ativos:    a => disp(a) > 0 || temVenda(a,'vendido') || temVenda(a,'enviado'),
+  todos:     () => true,
+};
+function estadoVis(a){
+  if (temVenda(a,'vendido')) return 'vendido';
+  if (temVenda(a,'enviado')) return 'enviado';
+  if (disp(a) > 0) return a.estado === 'publicado' ? 'publicado' : 'stock';
+  return 'concluido';
+}
 
 function toast(m, erro){ const t=$('toast'); t.textContent=m; t.style.background=erro?'#d33':'#2d2a32'; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'), 2800); }
 function abrirSheet(html){ $('sheet').innerHTML=html; $('ov').classList.add('on'); $('sheet').scrollTop=0; }
@@ -114,7 +140,6 @@ function fecharSheet(){ $('ov').classList.remove('on'); }
 async function init(){
   S.nc = novaCompra();
   S.mes = hoje().slice(0,7);
-  if (SUPABASE_URL.startsWith('COLAR')) { $('main').innerHTML = '<div class="box">⚙️ Falta colar o URL e a chave do Supabase no início do ficheiro.</div>'; return; }
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   sb.auth.onAuthStateChange((ev, sess) => {
     if (sess && !S.user) { S.user = sess.user; setTimeout(carregar, 0); }
@@ -131,13 +156,16 @@ async function carregar(){
   const {data:ok, error:e0} = await sb.rpc('is_membro');
   if (e0 || !ok) { S.acesso = false; return render(); }
   S.acesso = true;
-  const [a, c] = await Promise.all([
+  const [a, c, v] = await Promise.all([
     sb.from('artigos').select('*').order('id', {ascending:false}),
     sb.from('compras').select('*'),
+    sb.from('vendas').select('*').order('id', {ascending:false}),
   ]);
-  if (a.error || c.error) { toast('Erro a carregar: ' + (a.error||c.error).message, true); }
+  const err = a.error || c.error || v.error;
+  if (err) toast('Erro a carregar: ' + err.message, true);
   S.artigos = (a.data||[]).map(norm);
   S.compras = (c.data||[]).map(normC); ordCompras();
+  S.vendas = (v.data||[]).map(normV);
   render();
 }
 
@@ -165,9 +193,8 @@ function vLogin(){
 
 // ---------- STOCK ----------
 function vStock(){
-  const n = {stock:0, publicado:0, vendido:0, enviado:0};
-  S.artigos.forEach(a => { if (a.estado in n) n[a.estado]++; });
-  const chips = Object.keys(n).map(k => `<button class="chip ${S.filtro===k?'on':''}" style="background:${ESTADOS[k].cor}" onclick="setFiltro('${k}')"><b>${n[k]}</b><span>${ESTADOS[k].label}</span></button>`).join('');
+  const ks = ['stock','publicado','vendido','enviado'];
+  const chips = ks.map(k => `<button class="chip ${S.filtro===k?'on':''}" style="background:${ESTADOS[k].cor}" onclick="setFiltro('${k}')"><b>${S.artigos.filter(FILTRO_OK[k]).length}</b><span>${ESTADOS[k].label}</span></button>`).join('');
   return `<div class="chips">${chips}</div>
   <div class="row" style="margin-bottom:10px">
     <input id="q" type="search" placeholder="🔍 Código ou nome" value="${esc(S.pesquisa)}" oninput="S.pesquisa=this.value;renderLista()">
@@ -177,16 +204,16 @@ function vStock(){
 function setFiltro(f){ S.filtro = (S.filtro===f && f!=='ativos') ? 'ativos' : f; render(); }
 
 function card(a){
-  const e = ESTADOS[a.estado];
-  const extra = a.preco_venda != null ? ` · vendido ${eur(a.preco_venda)}` : '';
+  const e = ESTADOS[estadoVis(a)], d = disp(a);
+  const qtd = a.quantidade > 1 ? ` · <b style="display:inline;color:var(--txt)">${d}/${a.quantidade}</b> disp.` : '';
   return `<div class="card" onclick="abrirArtigo(${a.id})"><div class="cod">${cod(a.id)}</div>
-  <div class="info"><b>${esc(a.nome)}</b><small>${esc(a.categoria||'')}${a.tamanho?' · '+esc(a.tamanho):''} · custo ${eur(a.custo)}${extra}</small></div>
+  <div class="info"><b>${esc(a.nome)}</b><small>${esc(a.categoria||'')}${a.tamanho?' · '+esc(a.tamanho):''} · ${eur(a.custo)}${a.quantidade>1?'/un.':''}${qtd}</small></div>
   <span class="badge" style="background:${e.cor}">${e.label}</span></div>`;
 }
 function renderLista(){
   const el = $('lista'); if (!el) return;
   const q = S.pesquisa.trim().toLowerCase().replace(/^#/,'');
-  let l = S.artigos.filter(a => S.filtro==='todos' || (S.filtro==='ativos' ? a.estado!=='concluido' : a.estado===S.filtro));
+  let l = S.artigos.filter(FILTRO_OK[S.filtro]);
   if (q) {
     l = /^\d+$/.test(q)
       ? S.artigos.filter(a => a.id === Number(q))
@@ -198,30 +225,39 @@ function renderLista(){
 function camposPeca(p, a){
   return `<label>Descrição</label><input id="${p}_nome" value="${esc(a.nome)}" placeholder="Ex: Blusa azul Zara">
   <div class="row">
-    <div style="flex:1.4"><label>Categoria</label><select id="${p}_cat">${CATEGORIAS.map(c=>`<option ${c===a.categoria?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div style="flex:1.3"><label>Categoria</label><select id="${p}_cat">${CATEGORIAS.map(c=>`<option ${c===a.categoria?'selected':''}>${c}</option>`).join('')}</select></div>
     <div><label>Tamanho</label><input id="${p}_tam" list="tams" value="${esc(a.tamanho)}"></div>
-    <div><label>Custo €</label><input id="${p}_custo" inputmode="decimal" value="${esc(numInp(a.custo))}" placeholder="0,00"></div>
+  </div>
+  <div class="row">
+    <div><label>Quantidade</label><input id="${p}_qtd" type="number" inputmode="numeric" min="1" step="1" value="${esc(a.quantidade ?? 1)}"></div>
+    <div><label>Custo por unidade €</label><input id="${p}_custo" inputmode="decimal" value="${esc(numInp(a.custo))}" placeholder="0,00"></div>
   </div>`;
 }
-function lerPeca(p){ return {nome:val(p+'_nome').trim(), categoria:val(p+'_cat'), tamanho:val(p+'_tam').trim(), custo:val(p+'_custo')}; }
+function lerPeca(p){ return {nome:val(p+'_nome').trim(), categoria:val(p+'_cat'), tamanho:val(p+'_tam').trim(), quantidade:val(p+'_qtd'), custo:val(p+'_custo')}; }
+function validaPeca(p){
+  const custo = num(p.custo), quantidade = int(p.quantidade);
+  if (!p.nome) return {erro:'Falta a descrição'};
+  if (!(quantidade >= 1)) return {erro:'Quantidade inválida'};
+  if (isNaN(custo) || custo < 0) return {erro:'Falta o custo'};
+  return {nome:p.nome, categoria:p.categoria, tamanho:p.tamanho||null, quantidade, custo};
+}
 
 function abrirArtigo(id){
   const a = S.artigos.find(x => x.id === id); if (!a) return;
   const c = S.compras.find(x => x.id === a.compra_id);
-  const e = ESTADOS[a.estado];
-  const V = [['🛒 Vendido na Vinted',`vender(${id},'vinted')`],['🤝 Vendido em mão',`vender(${id},'presencial')`]];
-  const acoes = {
-    stock:     [['📲 Publicado na Vinted',`mudar(${id},'publicado')`,'sec'], ...V],
-    publicado: [...V, ['Tirar da Vinted',`mudar(${id},'stock')`,'sec']],
-    vendido:   [['📦 Marcar como enviado',`mudar(${id},'enviado')`], ['Anular venda',`anular(${id})`,'sec']],
-    enviado:   [['✅ Concluído (dinheiro recebido)',`mudar(${id},'concluido')`], ['Anular venda',`anular(${id})`,'sec']],
-    concluido: [['Anular venda',`anular(${id})`,'sec']],
-  }[a.estado];
+  const e = ESTADOS[estadoVis(a)], d = disp(a);
+  const vs = vendasDe(id).sort((x,y) => y.data_venda.localeCompare(x.data_venda) || y.id - x.id);
+  const acoes = d > 0 ? [
+    a.estado === 'publicado' ? ['Tirar da Vinted',`publicar(${id},false)`,'sec'] : ['📲 Publicado na Vinted',`publicar(${id},true)`,'sec'],
+    ['🛒 Vendido na Vinted',`vender(${id},'vinted')`],
+    ['🤝 Vendido em mão',`vender(${id},'presencial')`],
+  ] : [];
   abrirSheet(`
   <div class="row" style="align-items:center"><div class="cod">${cod(id)}</div><span class="badge" style="background:${e.cor}">${e.label}</span><button class="x" onclick="fecharSheet()">✕</button></div>
   <h3 style="margin:12px 0 4px">${esc(a.nome)}</h3>
-  ${a.preco_venda!=null ? `<div class="box">💶 Vendido ${a.canal==='vinted'?'na Vinted':'em mão'} por <b>${eur(a.preco_venda)}</b> a ${dt(a.data_venda)}<br>Lucro: <b class="${a.preco_venda-a.custo>=0?'pos':'neg'}">${eur(a.preco_venda-a.custo)}</b>${a.data_envio?`<br>📦 Enviado a ${dt(a.data_envio)}`:''}</div>` : ''}
+  <p class="mut" style="margin:0 0 6px">Disponível: <b style="color:var(--txt)">${d} de ${a.quantidade}</b> · custo ${eur(a.custo)}/un.</p>
   ${acoes.map(([l,f,cl]) => `<button class="btn ${cl||''}" onclick="${f}">${l}</button>`).join('')}
+  ${vs.length ? `<h3 style="margin:18px 0 8px">Vendas</h3>${vs.map(v => boxVenda(v, a)).join('')}` : ''}
   <div class="box" style="margin-top:14px">
     ${camposPeca('ed', a)}
     <label>Notas</label><textarea id="ed_notas" rows="2">${esc(a.notas)}</textarea>
@@ -229,6 +265,19 @@ function abrirArtigo(id){
   </div>
   <div class="mut" style="font-size:13px;cursor:pointer" onclick="${c?`abrirCompra(${c.id})`:''}">Compra: ${c ? `${dt(c.data)} · ${c.tipo==='lote'?'Lote':'Avulso'}${c.origem?' · '+esc(c.origem):''} ›` : '—'}</div>
   <button class="btn perigo" onclick="apagarArtigo(${id})">Apagar artigo</button>`);
+}
+function boxVenda(v, a){
+  const ve = VEST[v.estado], lucro = r2(v.preco - v.quantidade * a.custo);
+  const b = {
+    vendido:   [['📦 Enviado', `mudarVenda(${v.id},'enviado')`]],
+    enviado:   [['✅ Concluído', `mudarVenda(${v.id},'concluido')`]],
+    concluido: [],
+  }[v.estado];
+  return `<div class="box" style="padding:12px">
+    <div class="row" style="align-items:center"><b style="flex:1">${v.canal==='vinted'?'🛒 Vinted':'🤝 Em mão'} · ${un(v.quantidade)} · ${eur(v.preco)}</b><span class="badge" style="background:${ve.cor}">${ve.label}</span></div>
+    <small class="mut">${dt(v.data_venda)} · lucro <b class="${lucro>=0?'pos':'neg'}">${eur(lucro)}</b>${v.data_envio?` · enviado ${dt(v.data_envio)}`:''}</small>
+    <div class="row">${b.map(([l,f]) => `<button class="btn" style="padding:10px" onclick="${f}">${l}</button>`).join('')}<button class="btn sec" style="padding:10px" onclick="anularVenda(${v.id})">Anular</button></div>
+  </div>`;
 }
 
 async function upd(id, campos){
@@ -239,53 +288,77 @@ async function upd(id, campos){
   const i = S.artigos.findIndex(a => a.id === id); S.artigos[i] = norm(data[0]);
   return true;
 }
-async function mudar(id, estado){
-  const campos = {estado};
-  if (estado === 'enviado') campos.data_envio = hoje();
-  if (await upd(id, campos)) { fecharSheet(); toast({publicado:'Publicado na Vinted 📲', stock:'De volta ao stock', enviado:'Enviado 📦', concluido:'Concluído ✅'}[estado]); render(); }
+async function publicar(id, sim){
+  if (await upd(id, {estado: sim ? 'publicado' : 'stock'})) { toast(sim ? 'Publicado na Vinted 📲' : 'Tirado da Vinted'); render(); abrirArtigo(id); }
 }
 function vender(id, canal){
-  const a = S.artigos.find(x => x.id === id);
+  const a = S.artigos.find(x => x.id === id), d = disp(a);
   abrirSheet(`<div class="row" style="align-items:center"><h3 style="margin:0">${canal==='vinted'?'🛒 Vendido na Vinted':'🤝 Vendido em mão'}</h3><button class="x" onclick="abrirArtigo(${id})">✕</button></div>
-  <p class="mut">${cod(id)} · ${esc(a.nome)} · custo ${eur(a.custo)}</p>
-  <label>Preço de venda €</label><input id="v_preco" inputmode="decimal" placeholder="0,00">
+  <p class="mut">${cod(id)} · ${esc(a.nome)} · custo ${eur(a.custo)}/un. · ${d} disponíve${d===1?'l':'is'}</p>
+  <div class="row">
+    ${d > 1 ? `<div><label>Quantidade</label><input id="v_qtd" type="number" inputmode="numeric" min="1" max="${d}" step="1" value="1" oninput="totVenda()"></div>` : ''}
+    <div><label>Preço por unidade €</label><input id="v_preco" inputmode="decimal" placeholder="0,00" oninput="totVenda()"></div>
+  </div>
+  <p id="v_tot" class="mut" style="margin:8px 0 0"></p>
   ${canal==='vinted' ? '<small class="mut">O preço do artigo (o que recebes), sem portes nem a taxa que o comprador paga.</small>' : ''}
   <label>Data</label><input id="v_data" type="date" value="${hoje()}">
   <button class="btn" onclick="confirmarVenda(${id},'${canal}')">Confirmar venda</button>`);
   setTimeout(() => $('v_preco')?.focus(), 150);
 }
-async function confirmarVenda(id, canal){
-  const preco = num(val('v_preco'));
-  if (isNaN(preco) || preco < 0) return toast('Indica o preço de venda', true);
-  const ok = await upd(id, {canal, preco_venda:preco, data_venda: val('v_data') || hoje(), estado: canal==='vinted' ? 'vendido' : 'concluido'});
-  if (ok) { fecharSheet(); toast(canal==='vinted' ? 'Vendido! Agora é enviar 📦' : 'Venda registada 🎉'); render(); }
+function totVenda(){
+  const q = $('v_qtd') ? int(val('v_qtd')) : 1, p = num(val('v_preco'));
+  $('v_tot').innerHTML = (q > 1 && !isNaN(p)) ? `Total: <b>${eur(r2(q*p))}</b>` : '';
 }
-async function anular(id){
-  const a = S.artigos.find(x => x.id === id);
-  if (!confirm('Anular a venda de ' + cod(id) + '?')) return;
-  if (await upd(id, {estado: a.canal==='vinted' ? 'publicado' : 'stock', canal:null, preco_venda:null, data_venda:null, data_envio:null})) { fecharSheet(); toast('Venda anulada'); render(); }
+async function confirmarVenda(id, canal){
+  const a = S.artigos.find(x => x.id === id), d = disp(a);
+  const q = $('v_qtd') ? int(val('v_qtd')) : 1, p = num(val('v_preco'));
+  if (!(q >= 1) || q > d) return toast(`Quantidade entre 1 e ${d}`, true);
+  if (isNaN(p) || p < 0) return toast('Indica o preço de venda', true);
+  if (S.ocupado) return; S.ocupado = true;
+  const {data, error} = await sb.from('vendas').insert({artigo_id:id, quantidade:q, preco:r2(q*p), canal, data_venda: val('v_data') || hoje(), estado: canal==='vinted' ? 'vendido' : 'concluido'}).select().single();
+  S.ocupado = false;
+  if (error) return toast('Erro: ' + error.message, true);
+  S.vendas.unshift(normV(data));
+  fecharSheet(); toast(canal==='vinted' ? 'Vendido! Agora é enviar 📦' : 'Venda registada 🎉'); render();
+}
+async function mudarVenda(vid, estado){
+  const campos = {estado}; if (estado === 'enviado') campos.data_envio = hoje();
+  const {data, error} = await sb.from('vendas').update(campos).eq('id', vid).select();
+  if (error || !data?.length) return toast('Erro: ' + (error?.message || 'sem permissão'), true);
+  const i = S.vendas.findIndex(v => v.id === vid); S.vendas[i] = normV(data[0]);
+  toast(estado === 'enviado' ? 'Enviado 📦' : 'Concluído ✅'); render(); abrirArtigo(data[0].artigo_id);
+}
+async function anularVenda(vid){
+  const v = S.vendas.find(x => x.id === vid);
+  if (!confirm('Anular esta venda? As unidades voltam ao stock.')) return;
+  const {error} = await sb.from('vendas').delete().eq('id', vid);
+  if (error) return toast('Erro: ' + error.message, true);
+  S.vendas = S.vendas.filter(x => x.id !== vid);
+  toast('Venda anulada'); render(); abrirArtigo(v.artigo_id);
 }
 async function guardarArtigo(id){
-  const p = lerPeca('ed'), custo = num(p.custo);
-  if (!p.nome) return toast('Falta a descrição', true);
-  if (isNaN(custo)) return toast('Falta o custo', true);
-  if (!await upd(id, {nome:p.nome, categoria:p.categoria, tamanho:p.tamanho||null, custo, notas: val('ed_notas').trim()||null})) return;
-  const a = S.artigos.find(x => x.id === id), c = S.compras.find(x => x.id === a.compra_id);
-  if (c && c.tipo === 'avulso' && c.custo_total !== custo) {
-    const {error} = await sb.from('compras').update({custo_total:custo}).eq('id', c.id);
-    if (!error) c.custo_total = custo;
+  const p = validaPeca(lerPeca('ed')); if (p.erro) return toast(p.erro, true);
+  const a = S.artigos.find(x => x.id === id), vend = nVendidas(a);
+  if (p.quantidade < vend) return toast(`Já foram vendidas ${vend} unidades`, true);
+  if (!await upd(id, {...p, notas: val('ed_notas').trim()||null})) return;
+  const c = S.compras.find(x => x.id === a.compra_id), tot = r2(p.quantidade * p.custo);
+  if (c && c.tipo === 'avulso' && c.custo_total !== tot) {
+    const {error} = await sb.from('compras').update({custo_total:tot}).eq('id', c.id);
+    if (!error) c.custo_total = tot;
   }
   fecharSheet(); toast('Guardado ✅'); render();
 }
 async function apagarArtigo(id){
-  if (!confirm('Apagar ' + cod(id) + ' de vez?')) return;
+  const n = vendasDe(id).length;
+  if (!confirm('Apagar ' + cod(id) + ' de vez?' + (n ? ` As ${n} vendas deste artigo também são apagadas.` : ''))) return;
   const {error} = await sb.from('artigos').delete().eq('id', id);
   if (error) return toast('Erro: ' + error.message, true);
-  S.artigos = S.artigos.filter(a => a.id !== id); fecharSheet(); toast('Apagado'); render();
+  S.artigos = S.artigos.filter(a => a.id !== id); S.vendas = S.vendas.filter(v => v.artigo_id !== id);
+  fecharSheet(); toast('Apagado'); render();
 }
 
 // ---------- COMPRAS ----------
-function novaPeca(){ return {nome:'', categoria:'Roupa', tamanho:'', custo:''}; }
+function novaPeca(){ return {nome:'', categoria:'Roupa', tamanho:'', quantidade:1, custo:''}; }
 function novaCompra(){ return {tipo:'avulso', data:hoje(), origem:'', custo_total:'', pecas:[novaPeca()]}; }
 function syncNC(){
   if (!$('nc_data')) return;
@@ -303,7 +376,8 @@ function vCompra(){
   ${lote ? `<label>Custo total do lote €</label><input id="nc_total" inputmode="decimal" value="${esc(n.custo_total)}" placeholder="0,00" oninput="atualizarSoma()">` : ''}
   </div>
   <div id="pecas"></div>
-  ${lote ? `<div id="soma" class="box"></div><button class="btn sec" onclick="addPeca()">+ Adicionar peça</button>` : ''}
+  <div id="soma" class="box"></div>
+  ${lote ? `<button class="btn sec" onclick="addPeca()">+ Adicionar peça</button>` : ''}
   <button class="btn" id="btnGuardar" onclick="guardarCompra()">Guardar compra</button>
   <h3 style="margin:24px 0 10px">Compras anteriores</h3>${listaCompras()}`;
 }
@@ -316,22 +390,31 @@ function renderPecas(){
   el.innerHTML = S.nc.pecas.map((p, i) => `<div class="peca">
     ${lote ? `<div class="row" style="align-items:center"><b>Peça ${i+1}</b>${S.nc.pecas.length>1?`<button class="x" onclick="remPeca(${i})">✕</button>`:''}</div>` : ''}
     ${camposPeca('p'+i, p)}</div>`).join('');
-  el.querySelectorAll('input[id$="_custo"]').forEach(x => x.addEventListener('input', atualizarSoma));
+  el.querySelectorAll('input[id$="_custo"],input[id$="_qtd"]').forEach(x => x.addEventListener('input', atualizarSoma));
+}
+function somaPecas(){
+  let soma = 0, uni = 0;
+  S.nc.pecas.forEach((_, i) => { const q = int(val('p'+i+'_qtd')) || 0; uni += q; soma += q * (num(val('p'+i+'_custo')) || 0); });
+  return {soma: r2(soma), uni};
 }
 function atualizarSoma(){
   const el = $('soma'); if (!el) return;
-  const soma = r2(S.nc.pecas.reduce((s, _, i) => s + (num(val('p'+i+'_custo')) || 0), 0));
+  const {soma, uni} = somaPecas();
+  if (S.nc.tipo !== 'lote') { el.innerHTML = `Total da compra: <b>${eur(soma)}</b>${uni>1?` (${uni} unidades)`:''}`; return; }
   const tot = num(val('nc_total')) || 0, dif = r2(tot - soma);
-  el.innerHTML = `${S.nc.pecas.length} peças · distribuído <b>${eur(soma)}</b> de ${eur(tot)}<br>` +
+  el.innerHTML = `${uni} unidades · distribuído <b>${eur(soma)}</b> de ${eur(tot)}<br>` +
     (dif === 0 ? '✅ Bate certo' : dif > 0 ? `Faltam <b>${eur(dif)}</b> por distribuir` : `<span class="neg">${eur(-dif)} a mais</span>`);
 }
 async function guardarCompra(){
   syncNC();
   const n = S.nc, lote = n.tipo === 'lote';
-  const pecas = n.pecas.map(p => ({...p, custo: num(p.custo)}));
-  if (pecas.some(p => !p.nome)) return toast('Falta a descrição de alguma peça', true);
-  if (pecas.some(p => isNaN(p.custo))) return toast('Falta o custo de alguma peça', true);
-  const soma = r2(pecas.reduce((s, p) => s + p.custo, 0));
+  const pecas = [];
+  for (const [i, p] of n.pecas.entries()) {
+    const v = validaPeca(p);
+    if (v.erro) return toast(v.erro + (lote ? ` (peça ${i+1})` : ''), true);
+    pecas.push(v);
+  }
+  const soma = r2(pecas.reduce((s, p) => s + p.quantidade * p.custo, 0));
   const total = lote ? num(n.custo_total) : soma;
   if (lote) {
     if (isNaN(total)) return toast('Indica o custo total do lote', true);
@@ -341,14 +424,14 @@ async function guardarCompra(){
   try {
     const {data:c, error} = await sb.from('compras').insert({data:n.data, tipo:n.tipo, origem:n.origem.trim()||null, custo_total:total}).select().single();
     if (error) throw error;
-    const {data:arts, error:e2} = await sb.from('artigos').insert(pecas.map(p => ({compra_id:c.id, nome:p.nome, categoria:p.categoria, tamanho:p.tamanho||null, custo:p.custo, estado:'stock'}))).select();
+    const {data:arts, error:e2} = await sb.from('artigos').insert(pecas.map(p => ({...p, compra_id:c.id, estado:'stock'}))).select();
     if (e2) { await sb.from('compras').delete().eq('id', c.id); throw e2; }
     S.compras.push(normC(c)); ordCompras();
     const novos = arts.map(norm).sort((a,b) => a.id - b.id);
     S.artigos = [...novos.slice().reverse(), ...S.artigos];
     S.nc = novaCompra(); render();
     abrirSheet(`<h3>Compra guardada 🎉</h3><p>Escreve estes códigos nas etiquetas:</p>
-      ${novos.map(a => `<div class="card"><div class="cod">${cod(a.id)}</div><div class="info"><b>${esc(a.nome)}</b><small>${esc(a.tamanho||'')} · custo ${eur(a.custo)}</small></div></div>`).join('')}
+      ${novos.map(a => `<div class="card"><div class="cod">${cod(a.id)}</div><div class="info"><b>${esc(a.nome)}</b><small>${a.quantidade>1?`${a.quantidade} unidades · `:''}${esc(a.tamanho||'')} ${a.tamanho?'· ':''}custo ${eur(a.custo)}/un.</small></div></div>`).join('')}
       <button class="btn" onclick="fecharSheet()">Feito</button>`);
   } catch (e) { toast('Erro: ' + e.message, true); }
   finally { S.ocupado = false; if ($('btnGuardar')) $('btnGuardar').disabled = false; }
@@ -356,16 +439,17 @@ async function guardarCompra(){
 function listaCompras(){
   if (!S.compras.length) return '<div class="vazio">Ainda sem compras</div>';
   return S.compras.map(c => {
-    const arts = S.artigos.filter(a => a.compra_id === c.id), vend = arts.filter(a => a.preco_venda != null).length;
+    const arts = S.artigos.filter(a => a.compra_id === c.id);
+    const tot = arts.reduce((s,a) => s + a.quantidade, 0), vend = arts.reduce((s,a) => s + nVendidas(a), 0);
     return `<div class="card" onclick="abrirCompra(${c.id})"><div class="cod" style="background:#fff7e0;color:#c98a00">${c.tipo==='lote'?'Lote':'Avulso'}</div>
-    <div class="info"><b>${esc(c.origem || 'Sem origem')}</b><small>${dt(c.data)} · ${arts.length} peça${arts.length===1?'':'s'} · ${vend} vendida${vend===1?'':'s'}</small></div><b>${eur(c.custo_total)}</b></div>`;
+    <div class="info"><b>${esc(c.origem || 'Sem origem')}</b><small>${dt(c.data)} · ${tot} unidade${tot===1?'':'s'} · ${vend} vendida${vend===1?'':'s'}</small></div><b>${eur(c.custo_total)}</b></div>`;
   }).join('');
 }
 function abrirCompra(id){
   const c = S.compras.find(x => x.id === id); if (!c) return;
   const lote = c.tipo === 'lote';
   const arts = S.artigos.filter(a => a.compra_id === id).sort((a,b) => a.id - b.id);
-  const soma = r2(arts.reduce((s, a) => s + a.custo, 0));
+  const soma = r2(arts.reduce((s, a) => s + a.quantidade * a.custo, 0));
   abrirSheet(`<div class="row" style="align-items:center"><h3 style="margin:0">${lote?'Lote':'Compra avulsa'}</h3><button class="x" onclick="fecharSheet()">✕</button></div>
   <div class="box" style="margin-top:12px">
     <div class="row"><div><label>Data</label><input id="ce_data" type="date" value="${c.data}"></div><div><label>Onde comprou</label><input id="ce_origem" value="${esc(c.origem)}"></div></div>
@@ -375,7 +459,7 @@ function abrirCompra(id){
   </div>
   <h3>Peças</h3>${arts.map(card).join('') || '<div class="vazio">Sem peças</div>'}
   ${lote ? `<div class="box"><b>+ Adicionar peça a este lote</b>${camposPeca('np', novaPeca())}<button class="btn" onclick="addPecaLote(${id})">Adicionar</button></div>` : ''}
-  ${arts.every(a => a.preco_venda == null) ? `<button class="btn perigo" onclick="apagarCompra(${id})">Apagar compra e peças</button>` : ''}`);
+  ${arts.every(a => !vendasDe(a.id).length) ? `<button class="btn perigo" onclick="apagarCompra(${id})">Apagar compra e peças</button>` : ''}`);
 }
 async function guardarCompraEd(id){
   const c = S.compras.find(x => x.id === id);
@@ -386,12 +470,10 @@ async function guardarCompraEd(id){
   Object.assign(c, campos); ordCompras(); fecharSheet(); toast('Guardado ✅'); render();
 }
 async function addPecaLote(id){
-  const p = lerPeca('np'), custo = num(p.custo);
-  if (!p.nome) return toast('Falta a descrição', true);
-  if (isNaN(custo)) return toast('Falta o custo', true);
-  const {data, error} = await sb.from('artigos').insert({compra_id:id, nome:p.nome, categoria:p.categoria, tamanho:p.tamanho||null, custo, estado:'stock'}).select().single();
+  const p = validaPeca(lerPeca('np')); if (p.erro) return toast(p.erro, true);
+  const {data, error} = await sb.from('artigos').insert({...p, compra_id:id, estado:'stock'}).select().single();
   if (error) return toast('Erro: ' + error.message, true);
-  S.artigos.unshift(norm(data)); toast('Peça ' + cod(data.id) + ' adicionada'); abrirCompra(id); render();
+  S.artigos.unshift(norm(data)); toast('Peça ' + cod(data.id) + ' adicionada'); render(); abrirCompra(id);
 }
 async function apagarCompra(id){
   if (!confirm('Apagar esta compra e todas as suas peças?')) return;
@@ -402,29 +484,39 @@ async function apagarCompra(id){
 }
 
 // ---------- LUCRO ----------
+function vendaCard(v){
+  const a = S.artigos.find(x => x.id === v.artigo_id) || {nome:'?', custo:0};
+  const ve = VEST[v.estado], lucro = r2(v.preco - v.quantidade * a.custo);
+  return `<div class="card" onclick="abrirArtigo(${v.artigo_id})"><div class="cod">${cod(v.artigo_id)}</div>
+  <div class="info"><b>${esc(a.nome)}</b><small>${dt(v.data_venda)} · ${v.canal==='vinted'?'Vinted':'Em mão'} · ${un(v.quantidade)} · ${eur(v.preco)} · lucro ${eur(lucro)}</small></div>
+  <span class="badge" style="background:${ve.cor}">${ve.label}</span></div>`;
+}
 function vLucro(){
   const M = {};
-  const m0 = k => (M[k] ??= {v:0, c:0, g:0, itens:[]});
+  const m0 = k => (M[k] ??= {v:0, c:0, g:0, n:0, nV:0, itens:[]});
   m0(hoje().slice(0,7));
-  S.artigos.forEach(a => { if (a.preco_venda == null || !a.data_venda) return; const x = m0(a.data_venda.slice(0,7)); x.v += a.preco_venda; x.c += a.custo; x.itens.push(a); });
+  S.vendas.forEach(v => {
+    const a = S.artigos.find(x => x.id === v.artigo_id); if (!a) return;
+    const x = m0(v.data_venda.slice(0,7));
+    x.v += v.preco; x.c += v.quantidade * a.custo; x.n += v.quantidade; if (v.canal === 'vinted') x.nV += v.quantidade; x.itens.push(v);
+  });
   S.compras.forEach(c => { m0(c.data.slice(0,7)).g += c.custo_total; });
   const meses = Object.keys(M).sort().reverse();
   if (!M[S.mes]) S.mes = meses[0];
   const s = M[S.mes], lucro = r2(s.v - s.c);
-  const nV = s.itens.filter(a => a.canal === 'vinted').length;
   return `<h3>${mesNome(S.mes)}</h3>
   <div class="tot">
     <div><span>Vendas</span><b>${eur(s.v)}</b></div>
     <div><span>Custo peças</span><b>${eur(s.c)}</b></div>
     <div><span>Lucro</span><b class="${lucro>=0?'pos':'neg'}">${eur(lucro)}</b></div>
   </div>
-  <p class="mut" style="margin:0 0 12px;font-size:13px">${s.itens.length} peça${s.itens.length===1?'':'s'} vendida${s.itens.length===1?'':'s'} (${nV} Vinted · ${s.itens.length-nV} em mão) · gasto em compras neste mês: ${eur(s.g)}</p>
-  ${s.itens.sort((a,b) => b.data_venda.localeCompare(a.data_venda)).map(card).join('') || '<div class="vazio">Sem vendas neste mês</div>'}
+  <p class="mut" style="margin:0 0 12px;font-size:13px">${s.n} unidade${s.n===1?'':'s'} vendida${s.n===1?'':'s'} (${s.nV} Vinted · ${s.n-s.nV} em mão) · gasto em compras neste mês: ${eur(s.g)}</p>
+  ${s.itens.sort((a,b) => b.data_venda.localeCompare(a.data_venda) || b.id - a.id).map(vendaCard).join('') || '<div class="vazio">Sem vendas neste mês</div>'}
   <h3 style="margin:24px 0 10px">Todos os meses</h3>
   <table><tr><th>Mês</th><th>Vendas</th><th>Custo</th><th>Lucro</th></tr>
   ${meses.map(k => { const x = M[k], l = r2(x.v - x.c); return `<tr class="${k===S.mes?'on':''}" onclick="S.mes='${k}';render();window.scrollTo(0,0)"><td>${mesNome(k)}</td><td>${eur(x.v)}</td><td>${eur(x.c)}</td><td class="${l>=0?'pos':'neg'}">${eur(l)}</td></tr>`; }).join('')}
   </table>
-  <p class="mut" style="font-size:12px">Lucro = preço de venda − custo das peças vendidas nesse mês.</p>`;
+  <p class="mut" style="font-size:12px">Lucro = preço de venda − custo das unidades vendidas nesse mês.</p>`;
 }
 
 init();

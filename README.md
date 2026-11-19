@@ -4,3 +4,4 @@ Webapp de controlo de stock (compras, vendas Vinted e em mão, lucro por mês).
 
 - `index.html` — a app (Supabase + login Google)
 - `schema.sql` — estrutura da base de dados (já aplicada; não voltar a correr)
+- `migracao-01-quantidades.sql` — quantidades e tabela de vendas (aplicada a 19/11/2026)
