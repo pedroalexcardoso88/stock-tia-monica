@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ff5c8a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stock Tia Mónica">
+<title>Stock · Loja da Tia Mónica</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--rosa:#ff5c8a;--amarelo:#ffc93c;--verde:#2ec4b6;--roxo:#7b5cff;--laranja:#ff8a3d;--bg:#fff8f0;--txt:#2d2a32;--mut:#7a7484}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);padding-bottom:calc(80px + env(safe-area-inset-bottom))}
+header{background:linear-gradient(120deg,var(--rosa),var(--laranja) 55%,var(--amarelo));color:#fff;padding:calc(14px + env(safe-area-inset-top)) 16px 16px;border-radius:0 0 22px 22px;box-shadow:0 4px 14px #ff5c8a40;display:flex;align-items:center;gap:10px}
+header h1{margin:0;font-size:20px}header small{opacity:.92}header>div{flex:1}
+header button{border:none;background:#ffffff33;color:#fff;border-radius:10px;padding:8px 10px;font:inherit;font-size:12px;font-weight:700}
+main{padding:14px;max-width:640px;margin:0 auto}
+h3{margin:0 0 10px}
+.chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.chip{border:none;border-radius:14px;padding:10px 4px;color:#fff;text-align:center;font:inherit;box-shadow:0 2px 6px #0000001a}
+.chip b{display:block;font-size:22px}.chip span{font-size:11px;font-weight:700}
+.chip.on{outline:3px solid var(--txt);outline-offset:1px}
+input,select,textarea{width:100%;font:inherit;font-size:16px;padding:11px 12px;border:2px solid #f0e6dc;border-radius:12px;background:#fff;color:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--rosa)}
+label{font-size:12px;font-weight:700;color:var(--mut);display:block;margin:10px 0 4px}
+.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+.card{background:#fff;border-radius:16px;padding:12px;display:flex;align-items:center;gap:12px;margin-bottom:8px;box-shadow:0 2px 6px #0000000d;cursor:pointer}
+.cod{font-weight:800;font-size:13px;background:#fff0f4;color:var(--rosa);border-radius:10px;padding:6px 8px;min-width:60px;text-align:center;flex:0 0 auto!important}
+.info{flex:1;min-width:0}.info b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.info small{color:var(--mut)}
+.badge{color:#fff;font-size:11px;font-weight:700;padding:4px 9px;border-radius:99px;white-space:nowrap;flex:0 0 auto!important}
+.btn{border:none;border-radius:14px;padding:13px 14px;font:inherit;font-weight:700;color:#fff;background:var(--rosa);width:100%;margin-top:8px;cursor:pointer}
+.btn.sec{background:#f3ecff;color:var(--roxo)}.btn.perigo{background:none;color:#d33;font-weight:600;margin-top:16px}
+.btn:disabled{opacity:.5}
+.x{flex:0 0 auto!important;border:none;background:#f3ecff;color:var(--roxo);border-radius:10px;width:36px;height:36px;font-size:16px;margin-left:auto}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;display:flex;padding:8px 8px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -2px 12px #0000001a;z-index:5}
+nav button{flex:1;border:none;background:none;font:inherit;font-size:12px;font-weight:700;color:var(--mut);padding:6px;border-radius:12px}
+nav button i{display:block;font-style:normal;font-size:22px}
+nav button.on{color:var(--rosa);background:#fff0f4}
+#ov{position:fixed;inset:0;background:#2d2a3266;display:none;align-items:flex-end;z-index:10}
+#ov.on{display:flex}
+#sheet{background:var(--bg);width:100%;max-width:640px;margin:0 auto;border-radius:22px 22px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+.tog{display:flex;background:#fff4e8;border-radius:14px;padding:4px;gap:4px}
+.tog button{flex:1;border:none;background:none;padding:10px;border-radius:10px;font:inherit;font-weight:700;color:var(--mut)}
+.tog button.on{background:var(--rosa);color:#fff}
+.box{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 2px 6px #0000000d}
+.peca{background:#fff;border-radius:14px;padding:10px 12px 12px;margin-bottom:8px;border-left:5px solid var(--amarelo)}
+.tot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.tot div{background:#fff;border-radius:14px;padding:10px 4px;text-align:center;box-shadow:0 2px 6px #0000000d}
+.tot b{display:block;font-size:17px}.tot span{font-size:11px;color:var(--mut);font-weight:700}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:16px;overflow:hidden}
+td,th{padding:11px 8px;text-align:right;font-size:14px}td:first-child,th:first-child{text-align:left}
+th{font-size:11px;color:var(--mut)}tr+tr td{border-top:1px solid #f3ece4}
+tr.on td{background:#fff0f4}
+.pos{color:#2a9d3a;font-weight:700}.neg{color:#d33;font-weight:700}
+.vazio{text-align:center;color:var(--mut);padding:30px 10px}
+.mut{color:var(--mut)}
+#toast{position:fixed;left:50%;bottom:96px;transform:translate(-50%,20px);opacity:0;transition:.25s;color:#fff;padding:11px 16px;border-radius:12px;z-index:20;font-weight:600;max-width:90%;text-align:center;pointer-events:none}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<header><div><h1>Loja da Tia Mónica 🌸</h1><small>Controlo de stock · Vinted e em mão</small></div><button id="sair" onclick="sair()" hidden>Sair</button></header>
+<main id="main"></main>
+<nav id="nav" hidden>
+  <button data-tab="stock" onclick="setTab('stock')"><i>👗</i>Stock</button>
+  <button data-tab="compra" onclick="setTab('compra')"><i>🛍️</i>Compras</button>
+  <button data-tab="lucro" onclick="setTab('lucro')"><i>💶</i>Lucro</button>
+</nav>
+<div id="ov" onclick="if(event.target===this)fecharSheet()"><div id="sheet"></div></div>
+<div id="toast"></div>
+<datalist id="tams"><option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>34</option><option>36</option><option>38</option><option>40</option><option>42</option><option>44</option><option>46</option><option>Único</option><option>2A</option><option>4A</option><option>6A</option><option>8A</option><option>10A</option><option>12A</option><option>14A</option></datalist>
+
+<script>
+// ===== CONFIGURAÇÃO (Supabase → Project Settings → API) =====
+const SUPABASE_URL = 'https://pljkjtdfpbivizeldpzf.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_cEKpj86rrUvscsUhtgs-qA_VhyxaSsL';
+// ============================================================
+
+const ESTADOS = {
+  stock:     {label:'Em stock',   cor:'#2ec4b6'},
+  publicado: {label:'Na Vinted',  cor:'#7b5cff'},
+  vendido:   {label:'Por enviar', cor:'#ff8a3d'},
+  enviado:   {label:'Enviado',    cor:'#e0a100'},
+  concluido: {label:'Concluído',  cor:'#3bb54a'},
+};
+const FILTROS = [['ativos','Por vender / enviar'],['stock','Em stock'],['publicado','Na Vinted'],['vendido','Por enviar'],['enviado','Enviados'],['concluido','Concluídos'],['todos','Todos']];
+const CATEGORIAS = ['Roupa','Brinquedos','Acessórios','Casa','Outro'];
+
+const S = {user:null, acesso:null, artigos:[], compras:[], tab:'stock', filtro:'ativos', pesquisa:'', nc:null, mes:null, ocupado:false};
+let sb = null;
+
+// ---------- utilitários ----------
+const $ = id => document.getElementById(id);
+const val = id => ($(id)?.value ?? '');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur = n => (Number(n)||0).toLocaleString('pt-PT',{style:'currency',currency:'EUR'});
+const cod = id => '#' + String(id).padStart(4,'0');
+const num = s => { const n = parseFloat(String(s ?? '').replace(/\s/g,'').replace(',','.')); return isNaN(n) ? NaN : n; };
+const r2 = n => Math.round(n*100)/100;
+const numInp = n => n == null ? '' : String(n).replace('.',',');
+const dt = d => d ? d.split('-').reverse().join('/') : '';
+const hoje = () => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const mesNome = m => { const s = new Date(m+'-15T12:00:00').toLocaleDateString('pt-PT',{month:'long',year:'numeric'}); return s[0].toUpperCase()+s.slice(1); };
+const norm = a => ({...a, custo:Number(a.custo)||0, preco_venda: a.preco_venda==null ? null : Number(a.preco_venda)});
+const normC = c => ({...c, custo_total:Number(c.custo_total)||0});
+const ordCompras = () => S.compras.sort((a,b)=> b.data.localeCompare(a.data) || b.id-a.id);
+
+function toast(m, erro){ const t=$('toast'); t.textContent=m; t.style.background=erro?'#d33':'#2d2a32'; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'), 2800); }
+function abrirSheet(html){ $('sheet').innerHTML=html; $('ov').classList.add('on'); $('sheet').scrollTop=0; }
+function fecharSheet(){ $('ov').classList.remove('on'); }
+
+// ---------- arranque e login ----------
+async function init(){
+  S.nc = novaCompra();
+  S.mes = hoje().slice(0,7);
+  if (SUPABASE_URL.startsWith('COLAR')) { $('main').innerHTML = '<div class="box">⚙️ Falta colar o URL e a chave do Supabase no início do ficheiro.</div>'; return; }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb.auth.onAuthStateChange((ev, sess) => {
+    if (sess && !S.user) { S.user = sess.user; setTimeout(carregar, 0); }
+    if (!sess) { S.user = null; S.acesso = null; render(); }
+  });
+  const {data:{session}} = await sb.auth.getSession();
+  if (!session) render();
+}
+function login(){ sb.auth.signInWithOAuth({provider:'google', options:{redirectTo: location.origin + location.pathname}}); }
+async function sair(){ await sb.auth.signOut(); }
+
+async function carregar(){
+  $('main').innerHTML = '<div class="vazio">A carregar… 🌸</div>';
+  const {data:ok, error:e0} = await sb.rpc('is_membro');
+  if (e0 || !ok) { S.acesso = false; return render(); }
+  S.acesso = true;
+  const [a, c] = await Promise.all([
+    sb.from('artigos').select('*').order('id', {ascending:false}),
+    sb.from('compras').select('*'),
+  ]);
+  if (a.error || c.error) { toast('Erro a carregar: ' + (a.error||c.error).message, true); }
+  S.artigos = (a.data||[]).map(norm);
+  S.compras = (c.data||[]).map(normC); ordCompras();
+  render();
+}
+
+// ---------- render ----------
+function render(){
+  $('sair').hidden = !S.user;
+  $('nav').hidden = !(S.user && S.acesso);
+  if (!S.user) { $('main').innerHTML = vLogin(); return; }
+  if (S.acesso === false) {
+    $('main').innerHTML = `<div class="box">🙈 O email <b>${esc(S.user.email)}</b> não tem acesso. Pede ao Pedro para o adicionar.</div>`;
+    return;
+  }
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
+  if (S.tab === 'stock') { $('main').innerHTML = vStock(); renderLista(); }
+  else if (S.tab === 'compra') { $('main').innerHTML = vCompra(); renderPecas(); atualizarSoma(); }
+  else $('main').innerHTML = vLucro();
+}
+function setTab(t){ syncNC(); S.tab = t; render(); window.scrollTo(0,0); }
+
+function vLogin(){
+  return `<div class="box" style="text-align:center;margin-top:30px"><div style="font-size:54px">🛍️</div>
+  <h2 style="margin:6px 0">Olá, Mónica!</h2><p class="mut">Entra para veres o teu stock.</p>
+  <button class="btn" onclick="login()">Entrar com Google</button></div>`;
+}
+
+// ---------- STOCK ----------
+function vStock(){
+  const n = {stock:0, publicado:0, vendido:0, enviado:0};
+  S.artigos.forEach(a => { if (a.estado in n) n[a.estado]++; });
+  const chips = Object.keys(n).map(k => `<button class="chip ${S.filtro===k?'on':''}" style="background:${ESTADOS[k].cor}" onclick="setFiltro('${k}')"><b>${n[k]}</b><span>${ESTADOS[k].label}</span></button>`).join('');
+  return `<div class="chips">${chips}</div>
+  <div class="row" style="margin-bottom:10px">
+    <input id="q" type="search" placeholder="🔍 Código ou nome" value="${esc(S.pesquisa)}" oninput="S.pesquisa=this.value;renderLista()">
+    <select style="max-width:44%" onchange="setFiltro(this.value)">${FILTROS.map(([v,l])=>`<option value="${v}" ${S.filtro===v?'selected':''}>${l}</option>`).join('')}</select>
+  </div><div id="lista"></div>`;
+}
+function setFiltro(f){ S.filtro = (S.filtro===f && f!=='ativos') ? 'ativos' : f; render(); }
+
+function card(a){
+  const e = ESTADOS[a.estado];
+  const extra = a.preco_venda != null ? ` · vendido ${eur(a.preco_venda)}` : '';
+  return `<div class="card" onclick="abrirArtigo(${a.id})"><div class="cod">${cod(a.id)}</div>
+  <div class="info"><b>${esc(a.nome)}</b><small>${esc(a.categoria||'')}${a.tamanho?' · '+esc(a.tamanho):''} · custo ${eur(a.custo)}${extra}</small></div>
+  <span class="badge" style="background:${e.cor}">${e.label}</span></div>`;
+}
+function renderLista(){
+  const el = $('lista'); if (!el) return;
+  const q = S.pesquisa.trim().toLowerCase().replace(/^#/,'');
+  let l = S.artigos.filter(a => S.filtro==='todos' || (S.filtro==='ativos' ? a.estado!=='concluido' : a.estado===S.filtro));
+  if (q) {
+    l = /^\d+$/.test(q)
+      ? S.artigos.filter(a => a.id === Number(q))
+      : l.filter(a => [a.nome,a.categoria,a.tamanho,a.notas].join(' ').toLowerCase().includes(q));
+  }
+  el.innerHTML = l.length ? l.map(card).join('') : '<div class="vazio">Nada por aqui 🌸</div>';
+}
+
+function camposPeca(p, a){
+  return `<label>Descrição</label><input id="${p}_nome" value="${esc(a.nome)}" placeholder="Ex: Blusa azul Zara">
+  <div class="row">
+    <div style="flex:1.4"><label>Categoria</label><select id="${p}_cat">${CATEGORIAS.map(c=>`<option ${c===a.categoria?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div><label>Tamanho</label><input id="${p}_tam" list="tams" value="${esc(a.tamanho)}"></div>
+    <div><label>Custo €</label><input id="${p}_custo" inputmode="decimal" value="${esc(numInp(a.custo))}" placeholder="0,00"></div>
+  </div>`;
+}
+function lerPeca(p){ return {nome:val(p+'_nome').trim(), categoria:val(p+'_cat'), tamanho:val(p+'_tam').trim(), custo:val(p+'_custo')}; }
+
+function abrirArtigo(id){
+  const a = S.artigos.find(x => x.id === id); if (!a) return;
+  const c = S.compras.find(x => x.id === a.compra_id);
+  const e = ESTADOS[a.estado];
+  const V = [['🛒 Vendido na Vinted',`vender(${id},'vinted')`],['🤝 Vendido em mão',`vender(${id},'presencial')`]];
+  const acoes = {
+    stock:     [['📲 Publicado na Vinted',`mudar(${id},'publicado')`,'sec'], ...V],
+    publicado: [...V, ['Tirar da Vinted',`mudar(${id},'stock')`,'sec']],
+    vendido:   [['📦 Marcar como enviado',`mudar(${id},'enviado')`], ['Anular venda',`anular(${id})`,'sec']],
+    enviado:   [['✅ Concluído (dinheiro recebido)',`mudar(${id},'concluido')`], ['Anular venda',`anular(${id})`,'sec']],
+    concluido: [['Anular venda',`anular(${id})`,'sec']],
+  }[a.estado];
+  abrirSheet(`
+  <div class="row" style="align-items:center"><div class="cod">${cod(id)}</div><span class="badge" style="background:${e.cor}">${e.label}</span><button class="x" onclick="fecharSheet()">✕</button></div>
+  <h3 style="margin:12px 0 4px">${esc(a.nome)}</h3>
+  ${a.preco_venda!=null ? `<div class="box">💶 Vendido ${a.canal==='vinted'?'na Vinted':'em mão'} por <b>${eur(a.preco_venda)}</b> a ${dt(a.data_venda)}<br>Lucro: <b class="${a.preco_venda-a.custo>=0?'pos':'neg'}">${eur(a.preco_venda-a.custo)}</b>${a.data_envio?`<br>📦 Enviado a ${dt(a.data_envio)}`:''}</div>` : ''}
+  ${acoes.map(([l,f,cl]) => `<button class="btn ${cl||''}" onclick="${f}">${l}</button>`).join('')}
+  <div class="box" style="margin-top:14px">
+    ${camposPeca('ed', a)}
+    <label>Notas</label><textarea id="ed_notas" rows="2">${esc(a.notas)}</textarea>
+    <button class="btn sec" onclick="guardarArtigo(${id})">Guardar alterações</button>
+  </div>
+  <div class="mut" style="font-size:13px;cursor:pointer" onclick="${c?`abrirCompra(${c.id})`:''}">Compra: ${c ? `${dt(c.data)} · ${c.tipo==='lote'?'Lote':'Avulso'}${c.origem?' · '+esc(c.origem):''} ›` : '—'}</div>
+  <button class="btn perigo" onclick="apagarArtigo(${id})">Apagar artigo</button>`);
+}
+
+async function upd(id, campos){
+  if (S.ocupado) return false; S.ocupado = true;
+  const {data, error} = await sb.from('artigos').update(campos).eq('id', id).select();
+  S.ocupado = false;
+  if (error || !data?.length) { toast('Erro: ' + (error?.message || 'sem permissão'), true); return false; }
+  const i = S.artigos.findIndex(a => a.id === id); S.artigos[i] = norm(data[0]);
+  return true;
+}
+async function mudar(id, estado){
+  const campos = {estado};
+  if (estado === 'enviado') campos.data_envio = hoje();
+  if (await upd(id, campos)) { fecharSheet(); toast({publicado:'Publicado na Vinted 📲', stock:'De volta ao stock', enviado:'Enviado 📦', concluido:'Concluído ✅'}[estado]); render(); }
+}
+function vender(id, canal){
+  const a = S.artigos.find(x => x.id === id);
+  abrirSheet(`<div class="row" style="align-items:center"><h3 style="margin:0">${canal==='vinted'?'🛒 Vendido na Vinted':'🤝 Vendido em mão'}</h3><button class="x" onclick="abrirArtigo(${id})">✕</button></div>
+  <p class="mut">${cod(id)} · ${esc(a.nome)} · custo ${eur(a.custo)}</p>
+  <label>Preço de venda €</label><input id="v_preco" inputmode="decimal" placeholder="0,00">
+  ${canal==='vinted' ? '<small class="mut">O preço do artigo (o que recebes), sem portes nem a taxa que o comprador paga.</small>' : ''}
+  <label>Data</label><input id="v_data" type="date" value="${hoje()}">
+  <button class="btn" onclick="confirmarVenda(${id},'${canal}')">Confirmar venda</button>`);
+  setTimeout(() => $('v_preco')?.focus(), 150);
+}
+async function confirmarVenda(id, canal){
+  const preco = num(val('v_preco'));
+  if (isNaN(preco) || preco < 0) return toast('Indica o preço de venda', true);
+  const ok = await upd(id, {canal, preco_venda:preco, data_venda: val('v_data') || hoje(), estado: canal==='vinted' ? 'vendido' : 'concluido'});
+  if (ok) { fecharSheet(); toast(canal==='vinted' ? 'Vendido! Agora é enviar 📦' : 'Venda registada 🎉'); render(); }
+}
+async function anular(id){
+  const a = S.artigos.find(x => x.id === id);
+  if (!confirm('Anular a venda de ' + cod(id) + '?')) return;
+  if (await upd(id, {estado: a.canal==='vinted' ? 'publicado' : 'stock', canal:null, preco_venda:null, data_venda:null, data_envio:null})) { fecharSheet(); toast('Venda anulada'); render(); }
+}
+async function guardarArtigo(id){
+  const p = lerPeca('ed'), custo = num(p.custo);
+  if (!p.nome) return toast('Falta a descrição', true);
+  if (isNaN(custo)) return toast('Falta o custo', true);
+  if (!await upd(id, {nome:p.nome, categoria:p.categoria, tamanho:p.tamanho||null, custo, notas: val('ed_notas').trim()||null})) return;
+  const a = S.artigos.find(x => x.id === id), c = S.compras.find(x => x.id === a.compra_id);
+  if (c && c.tipo === 'avulso' && c.custo_total !== custo) {
+    const {error} = await sb.from('compras').update({custo_total:custo}).eq('id', c.id);
+    if (!error) c.custo_total = custo;
+  }
+  fecharSheet(); toast('Guardado ✅'); render();
+}
+async function apagarArtigo(id){
+  if (!confirm('Apagar ' + cod(id) + ' de vez?')) return;
+  const {error} = await sb.from('artigos').delete().eq('id', id);
+  if (error) return toast('Erro: ' + error.message, true);
+  S.artigos = S.artigos.filter(a => a.id !== id); fecharSheet(); toast('Apagado'); render();
+}
+
+// ---------- COMPRAS ----------
+function novaPeca(){ return {nome:'', categoria:'Roupa', tamanho:'', custo:''}; }
+function novaCompra(){ return {tipo:'avulso', data:hoje(), origem:'', custo_total:'', pecas:[novaPeca()]}; }
+function syncNC(){
+  if (!$('nc_data')) return;
+  const n = S.nc;
+  n.data = val('nc_data') || hoje(); n.origem = val('nc_origem');
+  if ($('nc_total')) n.custo_total = val('nc_total');
+  n.pecas = n.pecas.map((_, i) => lerPeca('p'+i));
+}
+function vCompra(){
+  const n = S.nc, lote = n.tipo === 'lote';
+  return `<div class="box"><h3>🛍️ Nova compra</h3>
+  <div class="tog"><button class="${!lote?'on':''}" onclick="setTipo('avulso')">Peça avulsa</button><button class="${lote?'on':''}" onclick="setTipo('lote')">Lote</button></div>
+  <div class="row"><div><label>Data</label><input id="nc_data" type="date" value="${n.data}"></div>
+  <div><label>Onde comprou</label><input id="nc_origem" value="${esc(n.origem)}" placeholder="Vinted, feira…"></div></div>
+  ${lote ? `<label>Custo total do lote €</label><input id="nc_total" inputmode="decimal" value="${esc(n.custo_total)}" placeholder="0,00" oninput="atualizarSoma()">` : ''}
+  </div>
+  <div id="pecas"></div>
+  ${lote ? `<div id="soma" class="box"></div><button class="btn sec" onclick="addPeca()">+ Adicionar peça</button>` : ''}
+  <button class="btn" id="btnGuardar" onclick="guardarCompra()">Guardar compra</button>
+  <h3 style="margin:24px 0 10px">Compras anteriores</h3>${listaCompras()}`;
+}
+function setTipo(t){ syncNC(); S.nc.tipo = t; if (t==='avulso') S.nc.pecas = S.nc.pecas.slice(0,1); render(); }
+function addPeca(){ syncNC(); S.nc.pecas.push(novaPeca()); renderPecas(); atualizarSoma(); $('p'+(S.nc.pecas.length-1)+'_nome')?.focus(); }
+function remPeca(i){ syncNC(); S.nc.pecas.splice(i,1); renderPecas(); atualizarSoma(); }
+function renderPecas(){
+  const el = $('pecas'); if (!el) return;
+  const lote = S.nc.tipo === 'lote';
+  el.innerHTML = S.nc.pecas.map((p, i) => `<div class="peca">
+    ${lote ? `<div class="row" style="align-items:center"><b>Peça ${i+1}</b>${S.nc.pecas.length>1?`<button class="x" onclick="remPeca(${i})">✕</button>`:''}</div>` : ''}
+    ${camposPeca('p'+i, p)}</div>`).join('');
+  el.querySelectorAll('input[id$="_custo"]').forEach(x => x.addEventListener('input', atualizarSoma));
+}
+function atualizarSoma(){
+  const el = $('soma'); if (!el) return;
+  const soma = r2(S.nc.pecas.reduce((s, _, i) => s + (num(val('p'+i+'_custo')) || 0), 0));
+  const tot = num(val('nc_total')) || 0, dif = r2(tot - soma);
+  el.innerHTML = `${S.nc.pecas.length} peças · distribuído <b>${eur(soma)}</b> de ${eur(tot)}<br>` +
+    (dif === 0 ? '✅ Bate certo' : dif > 0 ? `Faltam <b>${eur(dif)}</b> por distribuir` : `<span class="neg">${eur(-dif)} a mais</span>`);
+}
+async function guardarCompra(){
+  syncNC();
+  const n = S.nc, lote = n.tipo === 'lote';
+  const pecas = n.pecas.map(p => ({...p, custo: num(p.custo)}));
+  if (pecas.some(p => !p.nome)) return toast('Falta a descrição de alguma peça', true);
+  if (pecas.some(p => isNaN(p.custo))) return toast('Falta o custo de alguma peça', true);
+  const soma = r2(pecas.reduce((s, p) => s + p.custo, 0));
+  const total = lote ? num(n.custo_total) : soma;
+  if (lote) {
+    if (isNaN(total)) return toast('Indica o custo total do lote', true);
+    if (r2(total) !== soma && !confirm(`A soma das peças (${eur(soma)}) não bate com o lote (${eur(total)}). Guardar na mesma?`)) return;
+  }
+  if (S.ocupado) return; S.ocupado = true; $('btnGuardar').disabled = true;
+  try {
+    const {data:c, error} = await sb.from('compras').insert({data:n.data, tipo:n.tipo, origem:n.origem.trim()||null, custo_total:total}).select().single();
+    if (error) throw error;
+    const {data:arts, error:e2} = await sb.from('artigos').insert(pecas.map(p => ({compra_id:c.id, nome:p.nome, categoria:p.categoria, tamanho:p.tamanho||null, custo:p.custo, estado:'stock'}))).select();
+    if (e2) { await sb.from('compras').delete().eq('id', c.id); throw e2; }
+    S.compras.push(normC(c)); ordCompras();
+    const novos = arts.map(norm).sort((a,b) => a.id - b.id);
+    S.artigos = [...novos.slice().reverse(), ...S.artigos];
+    S.nc = novaCompra(); render();
+    abrirSheet(`<h3>Compra guardada 🎉</h3><p>Escreve estes códigos nas etiquetas:</p>
+      ${novos.map(a => `<div class="card"><div class="cod">${cod(a.id)}</div><div class="info"><b>${esc(a.nome)}</b><small>${esc(a.tamanho||'')} · custo ${eur(a.custo)}</small></div></div>`).join('')}
+      <button class="btn" onclick="fecharSheet()">Feito</button>`);
+  } catch (e) { toast('Erro: ' + e.message, true); }
+  finally { S.ocupado = false; if ($('btnGuardar')) $('btnGuardar').disabled = false; }
+}
+function listaCompras(){
+  if (!S.compras.length) return '<div class="vazio">Ainda sem compras</div>';
+  return S.compras.map(c => {
+    const arts = S.artigos.filter(a => a.compra_id === c.id), vend = arts.filter(a => a.preco_venda != null).length;
+    return `<div class="card" onclick="abrirCompra(${c.id})"><div class="cod" style="background:#fff7e0;color:#c98a00">${c.tipo==='lote'?'Lote':'Avulso'}</div>
+    <div class="info"><b>${esc(c.origem || 'Sem origem')}</b><small>${dt(c.data)} · ${arts.length} peça${arts.length===1?'':'s'} · ${vend} vendida${vend===1?'':'s'}</small></div><b>${eur(c.custo_total)}</b></div>`;
+  }).join('');
+}
+function abrirCompra(id){
+  const c = S.compras.find(x => x.id === id); if (!c) return;
+  const lote = c.tipo === 'lote';
+  const arts = S.artigos.filter(a => a.compra_id === id).sort((a,b) => a.id - b.id);
+  const soma = r2(arts.reduce((s, a) => s + a.custo, 0));
+  abrirSheet(`<div class="row" style="align-items:center"><h3 style="margin:0">${lote?'Lote':'Compra avulsa'}</h3><button class="x" onclick="fecharSheet()">✕</button></div>
+  <div class="box" style="margin-top:12px">
+    <div class="row"><div><label>Data</label><input id="ce_data" type="date" value="${c.data}"></div><div><label>Onde comprou</label><input id="ce_origem" value="${esc(c.origem)}"></div></div>
+    ${lote ? `<label>Custo total do lote €</label><input id="ce_total" inputmode="decimal" value="${esc(numInp(c.custo_total))}">
+    <small class="${r2(c.custo_total)===soma?'mut':'neg'}">Soma das peças: ${eur(soma)}</small>` : ''}
+    <button class="btn sec" onclick="guardarCompraEd(${id})">Guardar alterações</button>
+  </div>
+  <h3>Peças</h3>${arts.map(card).join('') || '<div class="vazio">Sem peças</div>'}
+  ${lote ? `<div class="box"><b>+ Adicionar peça a este lote</b>${camposPeca('np', novaPeca())}<button class="btn" onclick="addPecaLote(${id})">Adicionar</button></div>` : ''}
+  ${arts.every(a => a.preco_venda == null) ? `<button class="btn perigo" onclick="apagarCompra(${id})">Apagar compra e peças</button>` : ''}`);
+}
+async function guardarCompraEd(id){
+  const c = S.compras.find(x => x.id === id);
+  const campos = {data: val('ce_data') || c.data, origem: val('ce_origem').trim() || null};
+  if (c.tipo === 'lote') { const t = num(val('ce_total')); if (isNaN(t)) return toast('Custo total inválido', true); campos.custo_total = t; }
+  const {error} = await sb.from('compras').update(campos).eq('id', id);
+  if (error) return toast('Erro: ' + error.message, true);
+  Object.assign(c, campos); ordCompras(); fecharSheet(); toast('Guardado ✅'); render();
+}
+async function addPecaLote(id){
+  const p = lerPeca('np'), custo = num(p.custo);
+  if (!p.nome) return toast('Falta a descrição', true);
+  if (isNaN(custo)) return toast('Falta o custo', true);
+  const {data, error} = await sb.from('artigos').insert({compra_id:id, nome:p.nome, categoria:p.categoria, tamanho:p.tamanho||null, custo, estado:'stock'}).select().single();
+  if (error) return toast('Erro: ' + error.message, true);
+  S.artigos.unshift(norm(data)); toast('Peça ' + cod(data.id) + ' adicionada'); abrirCompra(id); render();
+}
+async function apagarCompra(id){
+  if (!confirm('Apagar esta compra e todas as suas peças?')) return;
+  const {error} = await sb.from('compras').delete().eq('id', id);
+  if (error) return toast('Erro: ' + error.message, true);
+  S.compras = S.compras.filter(c => c.id !== id); S.artigos = S.artigos.filter(a => a.compra_id !== id);
+  fecharSheet(); toast('Compra apagada'); render();
+}
+
+// ---------- LUCRO ----------
+function vLucro(){
+  const M = {};
+  const m0 = k => (M[k] ??= {v:0, c:0, g:0, itens:[]});
+  m0(hoje().slice(0,7));
+  S.artigos.forEach(a => { if (a.preco_venda == null || !a.data_venda) return; const x = m0(a.data_venda.slice(0,7)); x.v += a.preco_venda; x.c += a.custo; x.itens.push(a); });
+  S.compras.forEach(c => { m0(c.data.slice(0,7)).g += c.custo_total; });
+  const meses = Object.keys(M).sort().reverse();
+  if (!M[S.mes]) S.mes = meses[0];
+  const s = M[S.mes], lucro = r2(s.v - s.c);
+  const nV = s.itens.filter(a => a.canal === 'vinted').length;
+  return `<h3>${mesNome(S.mes)}</h3>
+  <div class="tot">
+    <div><span>Vendas</span><b>${eur(s.v)}</b></div>
+    <div><span>Custo peças</span><b>${eur(s.c)}</b></div>
+    <div><span>Lucro</span><b class="${lucro>=0?'pos':'neg'}">${eur(lucro)}</b></div>
+  </div>
+  <p class="mut" style="margin:0 0 12px;font-size:13px">${s.itens.length} peça${s.itens.length===1?'':'s'} vendida${s.itens.length===1?'':'s'} (${nV} Vinted · ${s.itens.length-nV} em mão) · gasto em compras neste mês: ${eur(s.g)}</p>
+  ${s.itens.sort((a,b) => b.data_venda.localeCompare(a.data_venda)).map(card).join('') || '<div class="vazio">Sem vendas neste mês</div>'}
+  <h3 style="margin:24px 0 10px">Todos os meses</h3>
+  <table><tr><th>Mês</th><th>Vendas</th><th>Custo</th><th>Lucro</th></tr>
+  ${meses.map(k => { const x = M[k], l = r2(x.v - x.c); return `<tr class="${k===S.mes?'on':''}" onclick="S.mes='${k}';render();window.scrollTo(0,0)"><td>${mesNome(k)}</td><td>${eur(x.v)}</td><td>${eur(x.c)}</td><td class="${l>=0?'pos':'neg'}">${eur(l)}</td></tr>`; }).join('')}
+  </table>
+  <p class="mut" style="font-size:12px">Lucro = preço de venda − custo das peças vendidas nesse mês.</p>`;
+}
+
+init();
+</script>
+</body>
+</html>
